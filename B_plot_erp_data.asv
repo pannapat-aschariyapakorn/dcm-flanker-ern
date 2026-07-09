@@ -1,0 +1,102 @@
+epochs_cong = {};
+epochs_incong = {};
+epochs_correct = {};
+epochs_incorrect = {};
+epochs_cong_correct = {};
+epochs_cong_incorrect = {};
+epochs_incong_correct = {};
+epochs_incong_incorrect = {};
+epochs = {};
+
+savedir = './preprocessed_data/preprocessed_data_new';
+% erp_save_dir = sprintf('%s_for_erp_plot', savedir);
+
+time_window =  [-0.2  0.8];
+
+shift = 0; % in seconds
+
+% Plot cong vs incong, correct vs incorrect
+
+mkdir(erp_save_dir);
+for session = 1:3
+    for subject = 1:29
+    
+        filename = 'Flanker.set';
+        filename = sprintf('%s_sub-%s_ses-S%d', filename, sprintf('%0*d',(subject<0)+2,subject), session);
+        filename_before_epoch = append(filename, '_before_epoch.set');
+        EEG.etc.eeglabvers = '2024.2';
+        EEG = pop_loadset(filename_before_epoch, savedir);
+
+        % Shift events
+        for i = 1:length(EEG.event)
+            if ismember(EEG.event(i).type, {'2511'  '2521' '2512'  '2522'})
+                EEG.event(i).latency =  EEG.event(i).latency + shift * EEG.srate;
+            end
+        end
+
+        EEG = eeg_checkset( EEG );
+        EEG_cong = pop_epoch( EEG, {  '2511'  '2521'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+        EEG_incong = pop_epoch( EEG, {  '2512'  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+        epochs_cong{end+1} = EEG_cong;
+        epochs_incong{end+1} = EEG_incong;
+
+        EEG_correct = pop_epoch( EEG, {  '2511'  '2512'  }, time_window, 'correct', 'epochs', 'epochinfo', 'yes');
+        epochs_correct{end+1} = EEG_correct;
+        
+        try
+            EEG_incorrect = pop_epoch( EEG, {  '2521'  '2522'  }, time_window, 'incorrect', 'epochs', 'epochinfo', 'yes');
+            epochs_incorrect{end+1} = EEG_incorrect;
+        catch   
+            warning("Unable to pop incorrect events");
+        end 
+        EEG = pop_epoch( EEG, {  '2511'  '2521'  '2512'  '2522'  }, time_window, 'epoched', 'epochs', 'epochinfo', 'yes');
+        epochs{end+1} = EEG;
+
+        EEG_cong = pop_saveset( EEG_cong, 'filename',sprintf('%s_cong.set', filename),'filepath',erp_save_dir);
+        EEG_incong = pop_saveset( EEG_incong, 'filename',sprintf('%s_incong.set', filename),'filepath',erp_save_dir);
+        EEG_correct = pop_saveset( EEG_correct, 'filename',sprintf('%s_correct.set', filename),'filepath',erp_save_dir);
+        EEG_incorrect = pop_saveset( EEG_incorrect, 'filename',sprintf('%s_incorrect.set', filename),'filepath',erp_save_dir);
+
+        % Separating cong vs incong + correct vs incorrect
+        try
+            EEG_cong_correct = pop_epoch( EEG, {  '2511'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+            EEG_cong_correct = pop_saveset( EEG_cong_correct, 'filename',sprintf('%s_cong_correct.set', filename),'filepath',savedir);
+            epochs_cong_correct{end+1} = EEG_cong_correct;
+        catch E
+            warning("Unable to pop events");
+        end
+
+        try
+            EEG_cong_incorrect = pop_epoch( EEG, {  '2521'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+            EEG_cong_incorrect = pop_saveset( EEG_cong_incorrect, 'filename',sprintf('%s_cong_incorrect.set', filename),'filepath',savedir);
+            epochs_cong_incorrect{end+1} = EEG_cong_incorrect;
+        catch E
+            warning("Unable to pop events");
+        end
+
+        try
+            EEG_incong_correct = pop_epoch( EEG, {  '2512'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+            EEG_incong_correct = pop_saveset( EEG_incong_correct, 'filename',sprintf('%s_incong_correct.set', filename),'filepath',savedir);
+            epochs_incong_correct{end+1} = EEG_incong_correct;
+        catch E
+            warning("Unable to pop events");
+        end
+
+        try
+            EEG_incong_incorrect = pop_epoch( EEG, {  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+            EEG_incong_incorrect = pop_saveset( EEG_incong_incorrect, 'filename',sprintf('%s_incong_incorrect.set', filename),'filepath',savedir);
+            epochs_incong_incorrect{end+1} = EEG_incong_incorrect;
+        catch E
+            warning("Unable to pop events");
+        end
+    end
+end
+
+save(sprintf('%s/data_for_plot_erp.mat', savedir), 'epochs_cong', 'epochs_incong', "epochs_correct", "epochs_incorrect", "epochs_cong_correct", "epochs_cong_incorrect", "epochs_incong_correct", "epochs_incong_incorrect");
+%}
+
+load(sprintf('%s/data_for_plot_erp.mat', savedir));
+
+h = plot_erp({epochs_incong_correct, epochs_incong_incorrect}, 'FCz','avgmode', 'across', 'labels', {'incong-correct', 'incong-incorrect'},  'plotstd', 'fill', 'permute', 1000);
+g = plot_erp({epochs_cong_correct, epochs_cong_incorrect}, 'FCz','avgmode', 'across', 'labels', {'cong-correct', 'cong-incorrect'},  'plotstd', 'fill', 'permute', 1000);
+i = plot_erp({epochs_incong_incorrect, epochs_cong_incorrect}, 'FCz','avgmode', 'across', 'labels', {'incong-incorrect', 'cong-incorrect'},  'plotstd', 'fill', 'permute', 1000);

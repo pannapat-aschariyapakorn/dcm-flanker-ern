@@ -1,0 +1,134 @@
+popevent = {'Subject', 'Session', 'Cong', 'Incong', 'Total'};
+time_window = [-0.2  0.8];
+shift = 0; % in seconds
+savedir = './preprocessed_data/preprocessed_data_new';
+mkdir(savedir);
+mkdir(append(savedir, '/events/'));
+mkdir(append(savedir, '/error/'));
+error_list = {};
+
+for session = 2:3
+    for subject = 1:28
+
+        strsub = sprintf('%0*d',(subject<0)+2,subject);
+        dir = sprintf(['./raw_data/sub-%s/ses-S%d/eeg/'],strsub, session );
+        
+
+        filename = 'Flanker.set';
+
+        file_name = sprintf('%s_sub-%s_ses-S%d', filename, sprintf('%0*d',(subject<0)+2,subject), session);
+        filename_before_epoch = char(append(filename, '_before_epoch.set'));
+
+        check_file_path = fullfile(savedir, filename);
+
+        if isfile(check_file_path)
+            fprintf('%s%s already preprocessed!\n', dir, filename);
+            continue;
+        end
+
+        % Preprocessing
+        EEG.etc.eeglabvers = '2024.2'; % this tracks which version of EEGLAB is being used, you may ignore it
+        EEG = pop_loadset(filename, dir);
+        EEG = pop_select( EEG, 'rmchannel',{'ECG1'});
+        EEG = pop_resample(EEG, 250);
+        EEG = pop_reref( EEG, []);
+        EEG = pop_eegfiltnew(EEG, 'locutoff',0.1,'plotfreqz',1);
+        EEG = pop_eegfiltnew(EEG, 'hicutoff',30,'plotfreqz',0);
+
+        EEG = pop_runica(EEG, 'icatype', 'runica', 'extended',1,'rndreset','yes','interrupt','on');
+        EEG = pop_iclabel(EEG, 'default');
+        EEG = pop_icflag(EEG, [NaN NaN;0.9 1;0.9 1;0.9 1;NaN NaN;NaN NaN;NaN NaN]);
+        EEG = pop_subcomp( EEG, [], 0);
+        EEG = eeg_checkset( EEG );
+
+        filename = sprintf('%s_sub-%s_ses-S%d', filename, sprintf('%0*d',(subject<0)+2,subject), session);
+        filename_before_epoch = char(append(filename, '_before_epoch.set'));
+        EEG = pop_saveset( EEG, 'filename',sprintf('%s', filename_before_epoch),'filepath',savedir);
+
+        % Shifting events
+        for i = 1:length(EEG.event)
+            if ismember(EEG.event(i).type, {'2511'  '2521' '2512'  '2522'})
+                EEG.event(i).latency =  EEG.event(i).latency + shift * EEG.srate;
+            end
+        end
+
+        % Epoching
+        EEG_cong = pop_epoch( EEG, {  '2511'  '2521'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+        EEG_cong = pop_rmbase(EEG_cong, [-200, 0]);
+        EEG_incong = pop_epoch( EEG, {  '2512'  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+        EEG_incong = pop_rmbase(EEG_incong, [-200, 0]);
+        EEG_all = pop_epoch( EEG, {  '2511'  '2521'  '2512'  '2522'  }, time_window, 'epoched', 'epochs', 'epochinfo', 'yes');
+        EEG_all = pop_rmbase(EEG_all, [-200, 0]);
+        EEG_all = pop_saveset( EEG_all, 'filename',sprintf('%s_epoched.set', filename),'filepath',savedir);
+
+        EEG_cong = eeg_checkset( EEG_cong );
+        EEG_cong = pop_saveset( EEG_cong, 'filename',sprintf('%s_cong.set', filename),'filepath',savedir);
+        pop_expevents(EEG_cong, append(savedir, '/events/', filename, '_event_cong.txt'), 'samples');
+        
+        EEG_incong = eeg_checkset( EEG_incong );
+        EEG_incong = pop_saveset( EEG_incong, 'filename',sprintf('%s_incong.set', filename),'filepath',savedir);
+        pop_expevents(EEG_incong, append(savedir, '/events/', filename, '_event_incong.txt'), 'samples');
+ 
+        popevent{end+1, 1} = subject;
+        popevent{end, 2} = session;
+        popevent{end, 3} = EEG_cong.trials;
+        popevent{end, 4} = EEG_incong.trials;
+        popevent{end, 5} = EEG_cong.trials + EEG_incong.trials;
+        
+        if popevent{end, 5} < 120
+            popevent{end, 6} = 1;
+        else
+            popevent{end, 6} = '-';
+        end
+        
+        try
+            EEG_cong_correct = pop_epoch( EEG, {  '2511'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+            EEG_cong_correct = pop_rmbase(EEG_cong_correct, [-200, 0]);
+            EEG_cong_correct = pop_saveset( EEG_cong_correct, 'filename',sprintf('%s_cong_correct.set', filename),'filepath',savedir);
+            pop_expevents(EEG_cong_correct, append(savedir, '/events/', filename, '_event_cong_correct.txt'), 'samples');
+        catch E
+            warning("Unable to pop events");
+            error_list{end+1, 1} = sprintf('sub-%d_ses-S%d_cong-correct', subject, session);
+            error_list{end, 2} = E.message;
+            save(sprintf('%s/error/%s_cong_correct.txt', savedir, filename));
+        end
+
+        try
+            EEG_cong_incorrect = pop_epoch( EEG, {  '2521'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
+            EEG_cong_incorrect = pop_rmbase(EEG_cong_incorrect, [-200, 0]);
+            EEG_cong_incorrect = pop_saveset( EEG_cong_incorrect, 'filename',sprintf('%s_cong_incorrect.set', filename),'filepath',savedir);
+            pop_expevents(EEG_cong_incorrect, append(savedir, '/events/', filename, '_event_cong_incorrect.txt'), 'samples');
+        catch E
+            warning("Unable to pop events");
+            error_list{end+1,1} = sprintf('sub-%d_ses-S%d_cong-incorrect', subject, session);
+            error_list{end, 2} = E.message;
+            save(sprintf('%s/error/%s_cong_incorrect.txt', savedir, filename));
+        end
+
+        try
+        EEG_incong_correct = pop_epoch( EEG, {  '2512'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+        EEG_incong_correct = pop_rmbase(EEG_incong_correct, [-200, 0]);
+        EEG_incong_correct = pop_saveset( EEG_incong_correct, 'filename',sprintf('%s_incong_correct.set', filename),'filepath',savedir);
+        pop_expevents(EEG_incong_correct, append(savedir, '/events/', filename, '_event_incong_correct.txt'), 'samples');
+        catch E
+            warning("Unable to pop events");
+            error_list{end+1,1} = sprintf('sub-%d_ses-S%d_incong-correct', subject, session);
+            error_list{end, 2} = E.message;
+            save(sprintf('%s/error/%s_incong_correct.txt', savedir, filename));
+        end
+
+        try
+            EEG_incong_incorrect = pop_epoch( EEG, {  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+            EEG_incong_incorrect = pop_rmbase(EEG_incong_incorrect, [-200, 0]);
+            EEG_incong_incorrect = pop_saveset( EEG_incong_incorrect, 'filename',sprintf('%s_incong_incorrect.set', filename),'filepath',savedir);
+            pop_expevents(EEG_incong_incorrect, append(savedir, '/events/', filename, '_event_incong_incorrect.txt'), 'samples');
+        catch E
+            warning("Unable to pop events");
+            error_list{end+1,1} = sprintf('sub-%d_ses-S%d_incong-incorrect', subject, session);
+            error_list{end, 2} = E.message;
+            save(sprintf('%s/error/%s_incong_incorrect.txt', savedir, filename));
+        end
+    end
+end
+
+save(sprintf('%s/error_list', savedir), 'error_list');
