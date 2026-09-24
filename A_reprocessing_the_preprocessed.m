@@ -8,8 +8,8 @@ mkdir(savedir);
 mkdir(append(savedir, '/events/'));
 mkdir(append(savedir, '/error/'));
 error_list = {'Index', 'Error Message', 'Error Identifier'};
-for session = 1:3
-    for subject = 1:29
+for session = 3:3
+    for subject = 8:8
         
         
         filename = 'Flanker.set';
@@ -29,10 +29,13 @@ for session = 1:3
         disp(EEG.event(1).latency)
 
         % Epoching
+        
         EEG_cong = pop_epoch( EEG, {  '2511'  '2521'  }, time_window, 'cong', 'epochs', 'epochinfo', 'yes');
         EEG_cong = pop_rmbase(EEG_cong, baseline_correction_interval);
         EEG_incong = pop_epoch( EEG, {  '2512'  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
         EEG_incong = pop_rmbase(EEG_incong, baseline_correction_interval);
+        
+        
         EEG_all = pop_epoch( EEG, {  '2511'  '2521'  '2512'  '2522'  }, time_window, 'epoched', 'epochs', 'epochinfo', 'yes');
         EEG_all = pop_rmbase(EEG_all, baseline_correction_interval);
         EEG_all = pop_saveset( EEG_all, 'filename',sprintf('%s_epoched.set', filename),'filepath',savedir);
@@ -44,7 +47,21 @@ for session = 1:3
         EEG_incong = eeg_checkset( EEG_incong );
         EEG_incong = pop_saveset( EEG_incong, 'filename',sprintf('%s_incong.set', filename),'filepath',savedir);
         pop_expevents(EEG_incong, append(savedir, '/events/', filename, '_event_incong.txt'), 'samples');
- 
+        %}
+        try
+            EEG_incorrect = pop_epoch( EEG, {  '2521'  '2522'  }, time_window, 'incong', 'epochs', 'epochinfo', 'yes');
+            EEG_incorrect = pop_rmbase(EEG_incorrect, baseline_correction_interval);
+            EEG_incorrect = eeg_checkset( EEG_incorrect );
+            EEG_incorrect = pop_saveset( EEG_incorrect, 'filename',sprintf('%s_incorrect.set', filename),'filepath',savedir);
+            pop_expevents(EEG_incorrect, append(savedir, '/events/', filename, '_event_incorrect.txt'), 'samples');
+        catch E
+            warning("Unable to pop events");
+            error_list{end+1, 1} = sprintf('sub-%d_ses-S%d_incorrect', subject, session);
+            error_list{end, 2} = E.message;
+            error_list{end, 3} = E.identifier;
+            save(sprintf('%s/error/%s_incorrect.txt', savedir, filename));
+        end
+
         popevent{end+1, 1} = subject;
         popevent{end, 2} = session;
         popevent{end, 3} = EEG_cong.trials;
@@ -143,6 +160,7 @@ for session = 1:3
             error_list{end, 3} = "RMB";
             save(sprintf('%s/error/%s_incong_incorrect.txt', savedir, filename));
         end
+        %}
     end
 end
 

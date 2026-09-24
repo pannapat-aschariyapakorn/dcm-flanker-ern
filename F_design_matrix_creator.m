@@ -1,5 +1,5 @@
 folder = './peb_analysis/individual_model/';
-excluded_subjects = [8, 18];
+excluded_subjects = [8, 18]; % 8, 18
 behavior_summary = [];
 behavior_summary_label = {'Subject', 'Reaction time (congruent)', 'Reaction time (incongruent)', 'Accuracy (congruent)', 'Accuracy (incongruent)'};
 
